@@ -26,7 +26,7 @@ import torch
 import torch.cuda.amp as amp
 import torch.nn as nn
 
-from zoedepth.trainers.loss import MSGradientLoss, SILogLoss
+from zoedepth.trainers.loss import GradL1Loss, SILogLoss
 from zoedepth.utils.config import DATASETS_CONFIG
 from zoedepth.utils.misc import compute_metrics
 from zoedepth.data.preprocess import get_black_border
@@ -42,8 +42,7 @@ class Trainer(BaseTrainer):
                          test_loader=test_loader, device=device)
         self.device = device
         self.silog_loss = SILogLoss()
-        self.abs_loss = nn.L1Loss()
-        self.grad_loss = MSGradientLoss()
+        self.grad_loss = GradL1Loss()
         self.scaler = amp.GradScaler(enabled=self.config.use_amp)
 
     def train_on_batch(self, batch, train_step):
