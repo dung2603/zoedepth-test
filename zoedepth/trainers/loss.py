@@ -75,11 +75,11 @@ def grad_mask(mask):
     return mask[..., 1:, 1:] & mask[..., 1:, :-1] & mask[..., :-1, 1:]
 
 
-class MSGradientLoss(nn.Module):
-    """Multi-Scale Gradient Loss"""
+class GradL1Loss(nn.Module):
+    """Gradient loss"""
     def __init__(self):
-        super(MSGradientLoss, self).__init__()
-        self.name = 'MSGradient'
+        super(GradL1Loss, self).__init__()
+        self.name = 'GradL1'
 
     def forward(self, input, target, mask=None, interpolate=True, return_interpolated=False):
         input = extract_key(input, KEY_OUTPUT)
@@ -100,6 +100,7 @@ class MSGradientLoss(nn.Module):
         if not return_interpolated:
             return loss
         return loss, intr_input
+
 
 class BerHuLoss(torch.nn.Module):
     def __init__(self, threshold=0.2):
