@@ -17,13 +17,7 @@
         "memory_efficient": true,
         "inverse_midas": false,
         "img_size": [384, 512],
-        "hybrid_method": {
-            "cnn_model": "ResNet50",
-            "vit_model": "ViT-B/16",
-            "combined_features_dim": 2816,
-            "domain_discriminator": {
-                "layers": [1024, 1024, 1],
-                "activation": "ReLU"
+       
             }
         }
     },
@@ -32,8 +26,8 @@
         "train_midas": true,
         "use_pretrained_midas": true,
         "trainer": "zoedepth",
-        "epochs": 5,
-        "bs": 16,
+        "epochs": ,
+        "bs": 8,
         "optim_kwargs": {"lr": 0.000161, "wd": 0.01},
         "sched_kwargs": {"div_factor": 1, "final_div_factor": 10000, "pct_start": 0.7, "three_phase": false, "cycle_momentum": true},
         "same_lr": false,
@@ -49,23 +43,19 @@
         "encoder_lr_factor": 10,
         "pos_enc_lr_factor": 10,
         "freeze_midas_bn": true,
-        "meta_learning": {
-            "method": "MAML",
-            "inner_lr": 0.01,
-            "num_inner_steps": 5
-        }
+        
     },
 
     "infer": {
         "train_midas": false,
         "use_pretrained_midas": false,
-        "pretrained_resource": "url::https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_N.pt",
+        "pretrained_resource": "url::https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vits14.pth",
         "force_keep_ar": true
     },
 
     "eval": {
         "train_midas": false,
         "use_pretrained_midas": false,
-        "pretrained_resource": "url::https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_N.pt"
+        "pretrained_resource": "url::https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vits14.pth"
     }
 }
