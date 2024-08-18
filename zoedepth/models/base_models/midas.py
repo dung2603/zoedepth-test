@@ -1,32 +1,7 @@
-# MIT License
-
-# Copyright (c) 2022 Intelligent Systems Lab Org
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-# File author: Shariq Farooq Bhat
-
 import torch
 import torch.nn as nn
 import numpy as np
 from torchvision.transforms import Normalize
-
 
 def denormalize(x):
     """Reverses the imagenet normalization applied to the input.
@@ -41,10 +16,7 @@ def denormalize(x):
     std = torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(x.device)
     return x * std + mean
 
-def get_activation(name, bank):
-    def hook(model, input, output):
-        bank[name] = output
-    return hook
+
 
 
 class Resize(object):
@@ -171,7 +143,6 @@ class Resize(object):
     def __call__(self, x):
         width, height = self.get_size(*x.shape[-2:][::-1])
         return nn.functional.interpolate(x, (height, width), mode='bilinear', align_corners=True)
-
 class PrepForMidas(object):
     def __init__(self, resize_mode="minimal", keep_aspect_ratio=True, img_size=384, do_resize=True):
         if isinstance(img_size, int):
@@ -184,7 +155,6 @@ class PrepForMidas(object):
 
     def __call__(self, x):
         return self.normalization(self.resizer(x))
-
 
 class MidasCore(nn.Module):
     def __init__(self, midas, trainable=False, fetch_features=True, layer_names=('out_conv', 'l4_rn', 'r4', 'r3', 'r2', 'r1'), freeze_bn=False, keep_aspect_ratio=True,
@@ -294,43 +264,13 @@ class MidasCore(nn.Module):
                 p.requires_grad = False
         return self
 
-    def attach_hooks(self, midas):
-        if len(self.handles) > 0:
-            self.remove_hooks()
-        if "out_conv" in self.layer_names:
-            self.handles.append(list(midas.scratch.output_conv.children())[
-                                3].register_forward_hook(get_activation("out_conv", self.core_out)))
-        if "r4" in self.layer_names:
-            self.handles.append(midas.scratch.refinenet4.register_forward_hook(
-                get_activation("r4", self.core_out)))
-        if "r3" in self.layer_names:
-            self.handles.append(midas.scratch.refinenet3.register_forward_hook(
-                get_activation("r3", self.core_out)))
-        if "r2" in self.layer_names:
-            self.handles.append(midas.scratch.refinenet2.register_forward_hook(
-                get_activation("r2", self.core_out)))
-        if "r1" in self.layer_names:
-            self.handles.append(midas.scratch.refinenet1.register_forward_hook(
-                get_activation("r1", self.core_out)))
-        if "l4_rn" in self.layer_names:
-            self.handles.append(midas.scratch.layer4_rn.register_forward_hook(
-                get_activation("l4_rn", self.core_out)))
-
-        return self
-
-    def remove_hooks(self):
-        for h in self.handles:
-            h.remove()
-        return self
-
-    def __del__(self):
-        self.remove_hooks()
+    
 
     def set_output_channels(self, model_type):
         self.output_channels = MIDAS_SETTINGS[model_type]
 
     @staticmethod
-    def build(midas_model_type="DPT_BEiT_L_384", train_midas=False, use_pretrained_midas=True, fetch_features=False, freeze_bn=True, force_keep_ar=False, force_reload=False, **kwargs):
+    def build(midas_model_type="Depth-Anything-Large", train_midas=False, fetch_features=False, freeze_bn=True, force_keep_ar=False, force_reload=False, **kwargs):
         if midas_model_type not in MIDAS_SETTINGS:
             raise ValueError(
                 f"Invalid model type: {midas_model_type}. Must be one of {list(MIDAS_SETTINGS.keys())}")
@@ -338,8 +278,8 @@ class MidasCore(nn.Module):
             kwargs = MidasCore.parse_img_size(kwargs)
         img_size = kwargs.pop("img_size", [384, 384])
         print("img_size", img_size)
-        midas = torch.hub.load("intel-isl/MiDaS", midas_model_type,
-                               pretrained=use_pretrained_midas, force_reload=force_reload)
+        midas = torch.hub.load('DepthAnything/Depth-Anything-V2', midas_model_type , source='github',
+                               pretrained=True , force_reload=force_reload)
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
         midas_core = MidasCore(midas, trainable=train_midas, fetch_features=fetch_features,
                                freeze_bn=freeze_bn, img_size=img_size, **kwargs)
@@ -367,10 +307,9 @@ class MidasCore(nn.Module):
 
 
 nchannels2models = {
-    tuple([256]*5): ["DPT_BEiT_L_384", "DPT_BEiT_L_512", "DPT_BEiT_B_384", "DPT_SwinV2_L_384", "DPT_SwinV2_B_384", "DPT_SwinV2_T_256", "DPT_Large", "DPT_Hybrid"],
-    (512, 256, 128, 64, 64): ["MiDaS_small"]
+    tuple([256]*3): ["Depth-Anything-Small,Depth-Anything-Base,Depth-Anything-Large"],
+    
 }
-
 # Model name to number of output channels
 MIDAS_SETTINGS = {m: k for k, v in nchannels2models.items()
                   for m in v
