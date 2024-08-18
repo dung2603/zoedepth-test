@@ -1,24 +1,40 @@
+# MIT License
+
+# Copyright (c) 2022 Intelligent Systems Lab Org
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# File author: Shariq Farooq Bhat
+
 import torch
 import torch.nn as nn
 import numpy as np
-from torchvision.transforms import Normalize
-from transformers import AutoModel, AutoTokenizer
-def denormalize(x):
-    """Reverses the imagenet normalization applied to the input.
-
-    Args:
-        x (torch.Tensor - shape(N,3,H,W)): input tensor
-
-    Returns:
-        torch.Tensor - shape(N,3,H,W): Denormalized input
-    """
-    mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(x.device)
-    std = torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(x.device)
-    return x * std + mean
-
-
-
-
+from torchvision.transforms import Normalize,InterpolationMode
+import requests
+import os
+from depth_anything.dpt import DPT_DINOv2
+def denormalize(self, x):
+        """Denormalize images to the original range."""
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+        x = x * std + mean
+        return x
 class Resize(object):
     """Resize sample to given size (width, height).
     """
@@ -143,49 +159,31 @@ class Resize(object):
     def __call__(self, x):
         width, height = self.get_size(*x.shape[-2:][::-1])
         return nn.functional.interpolate(x, (height, width), mode='bilinear', align_corners=True)
-class PrepForMidas(object):
+class PrepForDepth(object):
     def __init__(self, resize_mode="minimal", keep_aspect_ratio=True, img_size=384, do_resize=True):
         if isinstance(img_size, int):
             img_size = (img_size, img_size)
         net_h, net_w = img_size
         self.normalization = Normalize(
             mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        self.resizer = Resize(net_w, net_h, keep_aspect_ratio=keep_aspect_ratio, ensure_multiple_of=32, resize_method=resize_mode) \
+        self.resizer = Resize((net_h, net_w), interpolation=InterpolationMode.BILINEAR) \
             if do_resize else nn.Identity()
 
     def __call__(self, x):
-        return self.normalization(self.resizer(x))
-
-class MidasCore(nn.Module):
-    def __init__(self, midas, trainable=False, fetch_features=True, layer_names=('out_conv', 'l4_rn', 'r4', 'r3', 'r2', 'r1'), freeze_bn=False, keep_aspect_ratio=True,
-                 img_size=384, **kwargs):
-        """Midas Base model used for multi-scale feature extraction.
-
-        Args:
-            midas (torch.nn.Module): Midas model.
-            trainable (bool, optional): Train midas model. Defaults to False.
-            fetch_features (bool, optional): Extract multi-scale features. Defaults to True.
-            layer_names (tuple, optional): Layers used for feature extraction. Order = (head output features, last layer features, ...decoder features). Defaults to ('out_conv', 'l4_rn', 'r4', 'r3', 'r2', 'r1').
-            freeze_bn (bool, optional): Freeze BatchNorm. Generally results in better finetuning performance. Defaults to False.
-            keep_aspect_ratio (bool, optional): Keep the aspect ratio of input images while resizing. Defaults to True.
-            img_size (int, tuple, optional): Input resolution. Defaults to 384.
-        """
+        x = self.resizer(x)
+        x = self.normalization(x)
+        return x
+class DepthCore(nn.Module):
+    def __init__(self, depth_model, trainable=False, fetch_features=True, layer_names=('output_conv1', 'layer1_rn', 'layer2_rn', 'layer3_rn', 'layer4_rn'), freeze_bn=False, keep_aspect_ratio=True, img_size=384, **kwargs):
         super().__init__()
-        self.core = midas
-        self.output_channels = None
-        self.core_out = {}
+        self.core = depth_model
         self.trainable = trainable
         self.fetch_features = fetch_features
-        # midas.scratch.output_conv = nn.Identity()
-        self.handles = []
-        # self.layer_names = ['out_conv','l4_rn', 'r4', 'r3', 'r2', 'r1']
         self.layer_names = layer_names
 
         self.set_trainable(trainable)
-        self.set_fetch_features(fetch_features)
 
-        self.prep = PrepForMidas(keep_aspect_ratio=keep_aspect_ratio,
-                                 img_size=img_size, do_resize=kwargs.get('do_resize', True))
+        self.prep = PrepForDepth(keep_aspect_ratio=keep_aspect_ratio, img_size=img_size, do_resize=kwargs.get('do_resize', True))
 
         if freeze_bn:
             self.freeze_bn()
@@ -196,15 +194,6 @@ class MidasCore(nn.Module):
             self.unfreeze()
         else:
             self.freeze()
-        return self
-
-    def set_fetch_features(self, fetch_features):
-        self.fetch_features = fetch_features
-        if fetch_features:
-            if len(self.handles) == 0:
-                self.attach_hooks(self.core)
-        else:
-            self.remove_hooks()
         return self
 
     def freeze(self):
@@ -230,16 +219,13 @@ class MidasCore(nn.Module):
             if denorm:
                 x = denormalize(x)
             x = self.prep(x)
-            # print("Shape after prep: ", x.shape)
 
         with torch.set_grad_enabled(self.trainable):
-
-            # print("Input size to Midascore", x.shape)
             rel_depth = self.core(x)
-            # print("Output from midas shape", rel_depth.shape)
             if not self.fetch_features:
                 return rel_depth
-        out = [self.core_out[k] for k in self.layer_names]
+
+        out = [getattr(self.core.scratch, name) for name in self.layer_names]
 
         if return_rel_depth:
             return rel_depth, out
@@ -263,59 +249,83 @@ class MidasCore(nn.Module):
             for p in self.get_enc_params_except_rel_pos():
                 p.requires_grad = False
         return self
-
     
-
     def set_output_channels(self, model_type):
-        self.output_channels = MIDAS_SETTINGS[model_type]
-
+        self.output_channels = DEPTH_CORE_SETTINGS[model_type]
     
+# Định nghĩa hàm build
+    def build(depth_model_type="Depth-Anything-Large", train_depth=False, use_pretrained_depth=True, fetch_features=False, freeze_bn=True, force_keep_ar=False, force_reload=False, **kwargs):
+        if depth_model_type not in DEPTH_CORE_SETTINGS:
+            raise ValueError(f"Invalid model type: {depth_model_type}. Must be one of {list(DEPTH_CORE_SETTINGS.keys())}")
 
-    def build(midas_model_type="Depth-Anything-Large", train_midas=False, fetch_features=False, freeze_bn=True, force_keep_ar=False, force_reload=False, **kwargs):
-        if midas_model_type not in MIDAS_SETTINGS:
-            raise ValueError(
-                f"Invalid model type: {midas_model_type}. Must be one of {list(MIDAS_SETTINGS.keys())}")
         if "img_size" in kwargs:
-            kwargs = MidasCore.parse_img_size(kwargs)
+            kwargs = DepthCore.parse_img_size(kwargs)
         img_size = kwargs.pop("img_size", [384, 384])
         print("img_size", img_size)
+        if use_pretrained_depth:
+           model_url = MODEL_URLS[depth_model_type]
+           model_name = depth_model_type
 
-    # Load model from Hugging Face
-        model_name = "LiheYoung/Depth-Anything"
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        midas = AutoModel.from_pretrained(f"{model_name}/checkpoints/{midas_model_type}")
+        # Download the model if it doesn't already exist
+           model_path = download_model(model_url, model_name)
+
+        # Load the model from the local path
+           state_dict = torch.load(model_path)
+           depth_model = DPT_DINOv2()  # Khởi tạo mô hình của bạn
+           depth_model.load_state_dict(state_dict)  # Tải trọng số vào mô hình
+        else:
+        # Load the model from the provided file
+           depth_model  = torch.load("dpt.py")
 
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
-        midas_core = MidasCore(midas, trainable=train_midas, fetch_features=fetch_features,
-                           freeze_bn=freeze_bn, img_size=img_size, **kwargs)
-        midas_core.set_output_channels(midas_model_type)
-        return midas_core
+        depth_core = DepthCore(depth_model, trainable=train_depth, fetch_features=fetch_features,
+                               freeze_bn=freeze_bn, img_size=img_size, **kwargs)
+        depth_core.set_output_channels(depth_model_type)
+        return depth_core
 
     @staticmethod
     def build_from_config(config):
-        return MidasCore.build(**config)
+        return DepthCore.build(**config)
 
     @staticmethod
     def parse_img_size(config):
-       assert 'img_size' in config
-       if isinstance(config['img_size'], str):
+        assert 'img_size' in config
+        if isinstance(config['img_size'], str):
             assert "," in config['img_size'], "img_size should be a string with comma separated img_size=H,W"
             config['img_size'] = list(map(int, config['img_size'].split(",")))
-            assert len(
-                  config['img_size']) == 2, "img_size should be a string with comma separated img_size=H,W"
-       elif isinstance(config['img_size'], int):
+            assert len(config['img_size']) == 2, "img_size should be a string with comma separated img_size=H,W"
+        elif isinstance(config['img_size'], int):
             config['img_size'] = [config['img_size'], config['img_size']]
-       else:
-            assert isinstance(config['img_size'], list) and len(
-            config['img_size']) == 2, "img_size should be a list of H,W"
-       return config
+        else:
+            assert isinstance(config['img_size'], list) and len(config['img_size']) == 2, "img_size should be a list of H,W"
+        return config
 
+def download_model(url, model_name):
+    model_path = f"{model_name}.pth"
+    if not os.path.exists(model_path):
+        print(f"Downloading {model_name} model...")
+        response = requests.get(url)
+        with open(model_path, 'wb') as f:
+            f.write(response.content)
+        print(f"{model_name} model downloaded and saved as {model_path}.")
+    else:
+        print(f"{model_name} model already exists at {model_path}.")
+    return model_path
+
+# URLs for the models
+MODEL_URLS = {
+    "Depth-Anything-Small": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/depth_anything_v2_vits.pth?download=true",
+    "Depth-Anything-Base": "https://huggingface.co/depth-anything/Depth-Anything-V2-Base/resolve/main/depth_anything_v2_vitb.pth?download=true",
+    "Depth-Anything-Large": "https://huggingface.co/depth-anything/Depth-Anything-V2-Large/resolve/main/depth_anything_v2_vitl.pth?download=true"
+}
+
+# Mapping number of output channels to model names
 nchannels2models = {
-    tuple([256]*3): ["Depth-Anything-Small", "Depth-Anything-Base", "Depth-Anything-Large"],
+    tuple([256]*3): ["Depth-Anything-Small", "Depth-Anything-Base", "Depth-Anything-Large"]
 }
 
 # Model name to number of output channels
-MIDAS_SETTINGS = {m: k for k, v in nchannels2models.items()
-                  for m in v}
+DEPTH_CORE_SETTINGS = {m: k for k, v in nchannels2models.items() for m in v}
 
-       
+
+
