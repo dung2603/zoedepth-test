@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torchvision.transforms import Normalize
-
+from transformers import AutoModel, AutoTokenizer
 def denormalize(x):
     """Reverses the imagenet normalization applied to the input.
 
@@ -269,7 +269,8 @@ class MidasCore(nn.Module):
     def set_output_channels(self, model_type):
         self.output_channels = MIDAS_SETTINGS[model_type]
 
-    @staticmethod
+    
+
     def build(midas_model_type="Depth-Anything-Large", train_midas=False, fetch_features=False, freeze_bn=True, force_keep_ar=False, force_reload=False, **kwargs):
         if midas_model_type not in MIDAS_SETTINGS:
             raise ValueError(
@@ -278,11 +279,15 @@ class MidasCore(nn.Module):
             kwargs = MidasCore.parse_img_size(kwargs)
         img_size = kwargs.pop("img_size", [384, 384])
         print("img_size", img_size)
-        midas = torch.hub.load('DepthAnything/Depth-Anything-V2', midas_model_type , source='github',
-                               pretrained=True , force_reload=force_reload)
+
+    # Load model from Hugging Face
+        model_name = "LiheYoung/Depth-Anything"
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        midas = AutoModel.from_pretrained(f"{model_name}/checkpoints/{midas_model_type}")
+
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
         midas_core = MidasCore(midas, trainable=train_midas, fetch_features=fetch_features,
-                               freeze_bn=freeze_bn, img_size=img_size, **kwargs)
+                           freeze_bn=freeze_bn, img_size=img_size, **kwargs)
         midas_core.set_output_channels(midas_model_type)
         return midas_core
 
@@ -292,25 +297,25 @@ class MidasCore(nn.Module):
 
     @staticmethod
     def parse_img_size(config):
-        assert 'img_size' in config
-        if isinstance(config['img_size'], str):
+       assert 'img_size' in config
+       if isinstance(config['img_size'], str):
             assert "," in config['img_size'], "img_size should be a string with comma separated img_size=H,W"
             config['img_size'] = list(map(int, config['img_size'].split(",")))
             assert len(
-                config['img_size']) == 2, "img_size should be a string with comma separated img_size=H,W"
-        elif isinstance(config['img_size'], int):
+                  config['img_size']) == 2, "img_size should be a string with comma separated img_size=H,W"
+       elif isinstance(config['img_size'], int):
             config['img_size'] = [config['img_size'], config['img_size']]
-        else:
+       else:
             assert isinstance(config['img_size'], list) and len(
-                config['img_size']) == 2, "img_size should be a list of H,W"
-        return config
-
+            config['img_size']) == 2, "img_size should be a list of H,W"
+       return config
 
 nchannels2models = {
-    tuple([256]*3): ["Depth-Anything-Small,Depth-Anything-Base,Depth-Anything-Large"],
-    
+    tuple([256]*3): ["Depth-Anything-Small", "Depth-Anything-Base", "Depth-Anything-Large"],
 }
+
 # Model name to number of output channels
 MIDAS_SETTINGS = {m: k for k, v in nchannels2models.items()
-                  for m in v
-                  }
+                  for m in v}
+
+       
