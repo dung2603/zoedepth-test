@@ -28,7 +28,7 @@ import numpy as np
 from torchvision.transforms import Normalize,InterpolationMode
 import requests
 import os
-from depth_anything.dpt import DPT_DINOv2
+from depth_anything.dpt import DepthAnything
 def denormalize(self, x):
         """Denormalize images to the original range."""
         mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
@@ -174,7 +174,7 @@ class PrepForDepth(object):
         x = self.normalization(x)
         return x
 class DepthCore(nn.Module):
-    def __init__(self, depth_model, trainable=False, fetch_features=True, layer_names=('output_conv1', 'layer1_rn', 'layer2_rn', 'layer3_rn', 'layer4_rn'), freeze_bn=False, keep_aspect_ratio=True, img_size=384, **kwargs):
+    def __init__(self, depth_model, trainable=False, fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=384, **kwargs):
         super().__init__()
         self.core = depth_model
         self.trainable = trainable
