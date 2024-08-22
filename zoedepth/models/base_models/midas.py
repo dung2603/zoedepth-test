@@ -179,7 +179,7 @@ class DepthCore(nn.Module):
         self.core = depth_model
         self.trainable = trainable
         self.fetch_features = fetch_features
-        self.layer_names = layer_names
+       
 
         self.set_trainable(trainable)
 
@@ -252,37 +252,30 @@ class DepthCore(nn.Module):
     
     def set_output_channels(self, model_type):
         self.output_channels = DEPTH_CORE_SETTINGS[model_type]
+
+
     
-# Định nghĩa hàm build
-    def build(depth_model_type="Depth-Anything-Large", train_depth=False, use_pretrained_depth=True, fetch_features=False, freeze_bn=True, force_keep_ar=False, force_reload=False, **kwargs):
+    
+    def build(depth_model_type="Depth-Anything-Small", train_midas=False,fetch_features=False, freeze_bn=True, force_keep_ar=False, **kwargs):
         if depth_model_type not in DEPTH_CORE_SETTINGS:
             raise ValueError(f"Invalid model type: {depth_model_type}. Must be one of {list(DEPTH_CORE_SETTINGS.keys())}")
-
+    
         if "img_size" in kwargs:
             kwargs = DepthCore.parse_img_size(kwargs)
         img_size = kwargs.pop("img_size", [384, 384])
         print("img_size", img_size)
-        if use_pretrained_depth:
-           model_url = MODEL_URLS[depth_model_type]
-           model_name = depth_model_type
-
-        # Download the model if it doesn't already exist
-           model_path = download_model(model_url, model_name)
-
-        # Load the model from the local path
-           state_dict = torch.load(model_path)
-           depth_model = DPT_DINOv2()  # Khởi tạo mô hình của bạn
-           depth_model.load_state_dict(state_dict)  # Tải trọng số vào mô hình
-        else:
-        # Load the model from the provided file
-           depth_model  = torch.load("dpt.py")
-
+    
+        encoder = depth_model_type.split('-')[-1].lower()
+        checkpoint_path = checkpoints[depth_model_type]
+        depth_model = load_model(encoder, checkpoint_path)
+    
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
-        depth_core = DepthCore(depth_model, trainable=train_depth, fetch_features=fetch_features,
-                               freeze_bn=freeze_bn, img_size=img_size, **kwargs)
+        depth_core = DepthCore(depth_model, trainable=train_midas, fetch_features=fetch_features, freeze_bn=freeze_bn, img_size=img_size, **kwargs)
         depth_core.set_output_channels(depth_model_type)
+    
         return depth_core
-
+    
+        
     @staticmethod
     def build_from_config(config):
         return DepthCore.build(**config)
@@ -291,41 +284,28 @@ class DepthCore(nn.Module):
     def parse_img_size(config):
         assert 'img_size' in config
         if isinstance(config['img_size'], str):
-            assert "," in config['img_size'], "img_size should be a string with comma separated img_size=H,W"
-            config['img_size'] = list(map(int, config['img_size'].split(",")))
-            assert len(config['img_size']) == 2, "img_size should be a string with comma separated img_size=H,W"
+           assert "," in config['img_size'], "img_size should be a string with comma separated img_size=H,W"
+           config['img_size'] = list(map(int, config['img_size'].split(",")))
+           assert len(config['img_size']) == 2, "img_size should be a string with comma separated img_size=H,W"
         elif isinstance(config['img_size'], int):
-            config['img_size'] = [config['img_size'], config['img_size']]
+           config['img_size'] = [config['img_size'], config['img_size']]
         else:
             assert isinstance(config['img_size'], list) and len(config['img_size']) == 2, "img_size should be a list of H,W"
         return config
-
-def download_model(url, model_name):
-    model_path = f"{model_name}.pth"
-    if not os.path.exists(model_path):
-        print(f"Downloading {model_name} model...")
-        response = requests.get(url)
-        with open(model_path, 'wb') as f:
-            f.write(response.content)
-        print(f"{model_name} model downloaded and saved as {model_path}.")
-    else:
-        print(f"{model_name} model already exists at {model_path}.")
-    return model_path
-
-# URLs for the models
-MODEL_URLS = {
-    "Depth-Anything-Small": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/depth_anything_v2_vits.pth?download=true",
-    "Depth-Anything-Base": "https://huggingface.co/depth-anything/Depth-Anything-V2-Base/resolve/main/depth_anything_v2_vitb.pth?download=true",
-    "Depth-Anything-Large": "https://huggingface.co/depth-anything/Depth-Anything-V2-Large/resolve/main/depth_anything_v2_vitl.pth?download=true"
+def load_model(encoder, checkpoint_path):
+        depth_anything = DepthAnything.from_pretrained(f'LiheYoung/depth_anything_{encoder}14')
+        checkpoint = torch.load(checkpoint_path)
+        depth_anything.load_state_dict(checkpoint['state_dict'])
+        return depth_anything
+checkpoints = {
+    "Depth-Anything-Small": 'https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vits14.pth',
+    "Depth-Anything-Base": 'https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vitb14.pth',
+    "Depth-Anything-Large": 'https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vitl14.pth'
 }
 
-# Mapping number of output channels to model names
+# Model name to number of output channels
 nchannels2models = {
     tuple([256]*3): ["Depth-Anything-Small", "Depth-Anything-Base", "Depth-Anything-Large"]
 }
 
-# Model name to number of output channels
-DEPTH_CORE_SETTINGS = {m: k for k, v in nchannels2models.items() for m in v}
-
-
-
+DEPTH_CORE_SETTINGS = {m: k for k, v in nchannels2models.items() for m in v}   
