@@ -28,6 +28,8 @@ import numpy as np
 from torchvision.transforms import Normalize,InterpolationMode
 import requests
 import os
+import sys
+sys.path.append('/content/zoedepth-test/zoedepth/models/base_models')
 from depth_anything.dpt import DepthAnything
 def denormalize(self, x):
         """Denormalize images to the original range."""
