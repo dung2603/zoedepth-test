@@ -174,16 +174,35 @@ class PrepForDepth(object):
         x = self.normalization(x)
         return x
 class DepthCore(nn.Module):
-    def __init__(self, depth_model, trainable=False, fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=384, **kwargs):
+    def __init__(self, midas, trainable=False, fetch_features=True, layer_names=('out_conv', 'l4_rn', 'r4', 'r3', 'r2', 'r1'), freeze_bn=False, keep_aspect_ratio=True,
+                 img_size=384, **kwargs):
+        """Midas Base model used for multi-scale feature extraction.
+
+        Args:
+            midas (torch.nn.Module): Midas model.
+            trainable (bool, optional): Train midas model. Defaults to False.
+            fetch_features (bool, optional): Extract multi-scale features. Defaults to True.
+            layer_names (tuple, optional): Layers used for feature extraction. Order = (head output features, last layer features, ...decoder features). Defaults to ('out_conv', 'l4_rn', 'r4', 'r3', 'r2', 'r1').
+            freeze_bn (bool, optional): Freeze BatchNorm. Generally results in better finetuning performance. Defaults to False.
+            keep_aspect_ratio (bool, optional): Keep the aspect ratio of input images while resizing. Defaults to True.
+            img_size (int, tuple, optional): Input resolution. Defaults to 384.
+        """
         super().__init__()
-        self.core = depth_model
+        self.core = midas
+        self.output_channels = None
+        self.core_out = {}
         self.trainable = trainable
         self.fetch_features = fetch_features
-       
+        # midas.scratch.output_conv = nn.Identity()
+        self.handles = []
+        # self.layer_names = ['out_conv','l4_rn', 'r4', 'r3', 'r2', 'r1']
+        self.layer_names = layer_names
 
         self.set_trainable(trainable)
+        self.set_fetch_features(fetch_features)
 
-        self.prep = PrepForDepth(keep_aspect_ratio=keep_aspect_ratio, img_size=img_size, do_resize=kwargs.get('do_resize', True))
+        self.prep = PrepForMidas(keep_aspect_ratio=keep_aspect_ratio,
+                                 img_size=img_size, do_resize=kwargs.get('do_resize', True))
 
         if freeze_bn:
             self.freeze_bn()
@@ -194,6 +213,15 @@ class DepthCore(nn.Module):
             self.unfreeze()
         else:
             self.freeze()
+        return self
+
+    def set_fetch_features(self, fetch_features):
+        self.fetch_features = fetch_features
+        if fetch_features:
+            if len(self.handles) == 0:
+                self.attach_hooks(self.core)
+        else:
+            self.remove_hooks()
         return self
 
     def freeze(self):
@@ -219,13 +247,16 @@ class DepthCore(nn.Module):
             if denorm:
                 x = denormalize(x)
             x = self.prep(x)
+            # print("Shape after prep: ", x.shape)
 
         with torch.set_grad_enabled(self.trainable):
+
+            # print("Input size to Midascore", x.shape)
             rel_depth = self.core(x)
+            # print("Output from midas shape", rel_depth.shape)
             if not self.fetch_features:
                 return rel_depth
-
-        out = [getattr(self.core.scratch, name) for name in self.layer_names]
+        out = [self.core_out[k] for k in self.layer_names]
 
         if return_rel_depth:
             return rel_depth, out
@@ -249,31 +280,42 @@ class DepthCore(nn.Module):
             for p in self.get_enc_params_except_rel_pos():
                 p.requires_grad = False
         return self
-    
-    def set_output_channels(self, model_type):
-        self.output_channels = DEPTH_CORE_SETTINGS[model_type]
 
+    def attach_hooks(self, midas):
+        if len(self.handles) > 0:
+            self.remove_hooks()
+        if "out_conv" in self.layer_names:
+            self.handles.append(list(midas.scratch.output_conv.children())[
+                                3].register_forward_hook(get_activation("out_conv", self.core_out)))
+        if "r4" in self.layer_names:
+            self.handles.append(midas.scratch.refinenet4.register_forward_hook(
+                get_activation("r4", self.core_out)))
+        if "r3" in self.layer_names:
+            self.handles.append(midas.scratch.refinenet3.register_forward_hook(
+                get_activation("r3", self.core_out)))
+        if "r2" in self.layer_names:
+            self.handles.append(midas.scratch.refinenet2.register_forward_hook(
+                get_activation("r2", self.core_out)))
+        if "r1" in self.layer_names:
+            self.handles.append(midas.scratch.refinenet1.register_forward_hook(
+                get_activation("r1", self.core_out)))
+        if "l4_rn" in self.layer_names:
+            self.handles.append(midas.scratch.layer4_rn.register_forward_hook(
+                get_activation("l4_rn", self.core_out)))
+
+        return self
+
+    def remove_hooks(self):
+        for h in self.handles:
+            h.remove()
+        return self
+
+    def __del__(self):
+        self.remove_hooks()
 
     
-    
-    def build(depth_model_type="Depth-Anything-Small", train_midas=False,fetch_features=False, freeze_bn=True, force_keep_ar=False, **kwargs):
-        if depth_model_type not in DEPTH_CORE_SETTINGS:
-            raise ValueError(f"Invalid model type: {depth_model_type}. Must be one of {list(DEPTH_CORE_SETTINGS.keys())}")
-    
-        if "img_size" in kwargs:
-            kwargs = DepthCore.parse_img_size(kwargs)
-        img_size = kwargs.pop("img_size", [384, 384])
-        print("img_size", img_size)
-    
-        encoder = depth_model_type.split('-')[-1].lower()
-        checkpoint_path = checkpoints[depth_model_type]
-        depth_model = load_model(encoder, checkpoint_path)
-    
-        kwargs.update({'keep_aspect_ratio': force_keep_ar})
-        depth_core = DepthCore(depth_model, trainable=train_midas, fetch_features=fetch_features, freeze_bn=freeze_bn, img_size=img_size, **kwargs)
-        depth_core.set_output_channels(depth_model_type)
-    
-        return depth_core
+    encoder = 'vits' # can also be 'vitb' or 'vitl'
+    depth_anything = DepthAnything.from_pretrained('LiheYoung/depth_anything_{:}14'.format(encoder))
     
         
     @staticmethod
@@ -292,20 +334,6 @@ class DepthCore(nn.Module):
         else:
             assert isinstance(config['img_size'], list) and len(config['img_size']) == 2, "img_size should be a list of H,W"
         return config
-def load_model(encoder, checkpoint_path):
-        depth_anything = DepthAnything.from_pretrained(f'LiheYoung/depth_anything_{encoder}14')
-        checkpoint = torch.load(checkpoint_path)
-        depth_anything.load_state_dict(checkpoint['state_dict'])
-        return depth_anything
-checkpoints = {
-    "Depth-Anything-Small": 'https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vits14.pth',
-    "Depth-Anything-Base": 'https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vitb14.pth',
-    "Depth-Anything-Large": 'https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vitl14.pth'
-}
 
-# Model name to number of output channels
-nchannels2models = {
-    tuple([256]*3): ["Depth-Anything-Small", "Depth-Anything-Base", "Depth-Anything-Large"]
-}
 
-DEPTH_CORE_SETTINGS = {m: k for k, v in nchannels2models.items() for m in v}   
+
