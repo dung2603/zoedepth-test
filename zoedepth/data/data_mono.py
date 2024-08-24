@@ -1,3 +1,4 @@
+
 # MIT License
 
 # Copyright (c) 2022 Intelligent Systems Lab Org
@@ -293,6 +294,7 @@ class DataLoadPreprocess(Dataset):
         sample_path = self.filenames[idx]
         focal = float(sample_path.split()[2])
         sample = {}
+
         if self.mode == 'train':
             if self.config.dataset == 'kitti' and self.config.use_right and random.random() > 0.5:
                 image_path = os.path.join(
@@ -435,39 +437,11 @@ class DataLoadPreprocess(Dataset):
         sample = {**sample, 'image_path': sample_path.split()[0], 'depth_path': sample_path.split()[1]}
 
         return sample
-    def equalize_histogram(image):
-       img = cv2.equalizeHist(np.array(image, dtype=np.uint8))
-       return Image.fromarray(img)
-    def gaussian_blur(image, kernel_size=(5, 5), sigma=0):
-       img = cv2.GaussianBlur(np.array(image, dtype=np.float32), kernel_size, sigma)
-       return Image.fromarray(img)
-    def add_noise(image, noise_factor=0.1):
-       img = np.array(image, dtype=np.float32) / 255.0
-       noise = np.random.randn(*img.shape) * noise_factor
-       img = np.clip(img + noise, 0.0, 1.0) * 255
-       return Image.fromarray(img.astype(np.uint8))
-    def random_erasing(image, sl=0.02, sh=0.4, r1=0.3, r2=3):
-       img = np.array(image, dtype=np.float32) / 255.0
-       area = img.shape[0] * img.shape[1]
-       target_area = random.uniform(sl, sh) * area
-       aspect_ratio = random.uniform(r1, r2)
 
-       h = int(round(np.sqrt(target_area * aspect_ratio)))
-       w = int(round(np.sqrt(target_area / aspect_ratio)))
-
-       if w < img.shape[1] and h < img.shape[0]:
-          x1 = random.randint(0, img.shape[1] - w)
-          y1 = random.randint(0, img.shape[0] - h)
-          img[y1:y1 + h, x1:x1 + w, :] = 0
-
-       return Image.fromarray((img * 255).astype(np.uint8))
     def rotate_image(self, image, angle, flag=Image.BILINEAR):
         result = image.rotate(angle, resample=flag)
         return result
-    def colorjitter(self, image):
-        color_jitter = transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.1)
-        image = color_jitter(image)
-        return image
+
     def random_crop(self, img, depth, height, width):
         assert img.shape[0] >= height
         assert img.shape[1] >= width
@@ -504,14 +478,11 @@ class DataLoadPreprocess(Dataset):
             if do_flip > 0.5:
                 image = (image[:, ::-1, :]).copy()
                 depth_gt = (depth_gt[:, ::-1, :]).copy()
-            
+
             # Random gamma, brightness, color augmentation
             do_augment = random.random()
             if do_augment > 0.5:
                 image = self.augment_image(image)
-            
-            
-
 
         return image, depth_gt
 
@@ -534,18 +505,6 @@ class DataLoadPreprocess(Dataset):
         image_aug *= color_image
         image_aug = np.clip(image_aug, 0, 1)
 
-         # histogram equalization
-        image_aug = self.equalize_histogram(image_aug)
-
-    # gaussian blur
-        image_aug = self.gaussian_blur(image_aug)
-
-    # add noise
-        image_aug = self.add_noise(image_aug)
-
-    # random erasing
-        image_aug = self.random_erasing(image_aug)
-        
         return image_aug
 
     def __len__(self):
