@@ -210,6 +210,7 @@ class ZoeDepth(DepthModel):
             list : list of parameters to optimize and their learning rates, in the format required by torch optimizers.
         """
         param_conf = []
+        
         if self.train_midas:
             if self.encoder_lr_factor > 0:
                 param_conf.append({'params': self.core.get_enc_params_except_rel_pos(
@@ -218,8 +219,11 @@ class ZoeDepth(DepthModel):
             if self.pos_enc_lr_factor > 0:
                 param_conf.append(
                     {'params': self.core.get_rel_pos_params(), 'lr': lr / self.pos_enc_lr_factor})
-
-            midas_params = self.core.core.scratch.parameters()
+            if hasattr(self.core, 'depth_head'):
+              midas_params = self.core.depth_head.parameters()
+            else:
+              midas_params = [] 
+          
             midas_lr_factor = self.midas_lr_factor
             param_conf.append(
                 {'params': midas_params, 'lr': lr / midas_lr_factor})
@@ -232,7 +236,8 @@ class ZoeDepth(DepthModel):
             *[child.parameters() for child in remaining_modules])
 
         param_conf.append({'params': remaining_params, 'lr': lr})
-
+        if not param_conf:
+           raise ValueError("No parameters to optimize found.")
         return param_conf
 
     @staticmethod
