@@ -11,6 +11,7 @@
         "attractor_gamma": 2,
         "attractor_kind" : "mean",
         "attractor_type" : "inv",
+        "encoder"= "vitl",
         "min_temp": 0.0212,
         "max_temp": 50.0,
         "output_distribution": "logbinomial",
@@ -46,13 +47,13 @@
     "infer":{
         "train_midas": false,
         "use_pretrained_midas": false,
-        "pretrained_resource" : "url::https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_N.pt",
+        "pretrained_resource" : "url::https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vitl14.pth",
         "force_keep_ar": true
     },
 
     "eval":{
         "train_midas": false,
         "use_pretrained_midas": false,
-        "pretrained_resource" : "url::https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_N.pt"
+        "pretrained_resource" : "url::https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vitl14.pth"
     }
 }
