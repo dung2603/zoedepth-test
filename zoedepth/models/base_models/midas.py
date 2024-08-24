@@ -26,17 +26,28 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torchvision.transforms import Normalize,InterpolationMode
-import requests
-import os
 import sys
 sys.path.append('/content/zoedepth-test/zoedepth/models/base_models')
 from depth_anything.dpt import DepthAnything
-def denormalize(self, x):
-        """Denormalize images to the original range."""
-        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
-        x = x * std + mean
-        return x
+def denormalize(x):
+    """Reverses the imagenet normalization applied to the input.
+
+    Args:
+        x (torch.Tensor - shape(N,3,H,W)): input tensor
+
+    Returns:
+        torch.Tensor - shape(N,3,H,W): Denormalized input
+    """
+    mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(x.device)
+    std = torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(x.device)
+    return x * std + mean
+
+def get_activation(name, bank):
+    def hook(model, input, output):
+        bank[name] = output
+    return hook
+
+
 class Resize(object):
     """Resize sample to given size (width, height).
     """
@@ -176,7 +187,7 @@ class PrepForDepth(object):
         x = self.normalization(x)
         return x
 class DepthCore(nn.Module):
-    def __init__(self, midas, trainable=False, fetch_features=True, layer_names=('out_conv', 'l4_rn', 'r4', 'r3', 'r2', 'r1'), freeze_bn=False, keep_aspect_ratio=True,
+    def __init__(self, depth_anything, fetch_features=True, layer_names=('out_conv', 'l4_rn', 'r4', 'r3', 'r2', 'r1'), freeze_bn=False, keep_aspect_ratio=True,
                  img_size=384, **kwargs):
         """Midas Base model used for multi-scale feature extraction.
 
@@ -190,20 +201,19 @@ class DepthCore(nn.Module):
             img_size (int, tuple, optional): Input resolution. Defaults to 384.
         """
         super().__init__()
-        self.core = midas
+        self.core = depth_anything 
         self.output_channels = None
         self.core_out = {}
-        self.trainable = trainable
         self.fetch_features = fetch_features
         # midas.scratch.output_conv = nn.Identity()
         self.handles = []
         # self.layer_names = ['out_conv','l4_rn', 'r4', 'r3', 'r2', 'r1']
         self.layer_names = layer_names
 
-        self.set_trainable(trainable)
+        
         self.set_fetch_features(fetch_features)
 
-        self.prep = PrepForMidas(keep_aspect_ratio=keep_aspect_ratio,
+        self.prep = PrepForDepth(keep_aspect_ratio=keep_aspect_ratio,
                                  img_size=img_size, do_resize=kwargs.get('do_resize', True))
 
         if freeze_bn:
@@ -315,9 +325,27 @@ class DepthCore(nn.Module):
     def __del__(self):
         self.remove_hooks()
 
+    def set_output_channels(self, model_type):
+        self.output_channels = DEPTH_CORE_SETTINGS[model_type]
+
     
-    encoder = 'vits' # can also be 'vitb' or 'vitl'
-    depth_anything = DepthAnything.from_pretrained('LiheYoung/depth_anything_{:}14'.format(encoder))
+    
+    def build(encoder="vitl", fetch_features=False, freeze_bn=True, force_keep_ar=False, **kwargs):
+        if encoder not in DEPTH_CORE_SETTINGS:
+            raise ValueError(f"Invalid model type: {encoder}. Must be one of {list(DEPTH_CORE_SETTINGS.keys())}")
+    
+        if "img_size" in kwargs:
+            kwargs = DepthCore.parse_img_size(kwargs)
+        img_size = kwargs.pop("img_size", [384, 384])
+        print("img_size", img_size)
+        
+        depth_anything = DepthAnything.from_pretrained('LiheYoung/depth_anything_{:}14'.format(encoder))
+        
+        kwargs.update({'keep_aspect_ratio': force_keep_ar})
+        depth_core = DepthCore(depth_anything, fetch_features=fetch_features,
+                               freeze_bn=freeze_bn, img_size=img_size, **kwargs)
+        depth_core.set_output_channels(encoder)
+        return depth_core
     
         
     @staticmethod
@@ -336,6 +364,11 @@ class DepthCore(nn.Module):
         else:
             assert isinstance(config['img_size'], list) and len(config['img_size']) == 2, "img_size should be a list of H,W"
         return config
+    
 
+# Model name to number of output channels
+nchannels2models = {
+    tuple([256]*3): ["vits", "vitb", "vitl"]
+}
 
-
+DEPTH_CORE_SETTINGS = {m: k for k, v in nchannels2models.items() for m in v}   
