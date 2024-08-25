@@ -27,8 +27,13 @@ import torch.nn as nn
 import numpy as np
 from torchvision.transforms import Normalize,InterpolationMode
 import sys
+import requests
+import os
 sys.path.append('/content/zoedepth-test/zoedepth/models/base_models')
 from depth_anything.dpt import DepthAnything
+from huggingface_hub import hf_hub_download
+
+
 def denormalize(x):
     """Reverses the imagenet normalization applied to the input.
 
@@ -58,7 +63,7 @@ class Resize(object):
         height,
         resize_target=True,
         keep_aspect_ratio=False,
-        ensure_multiple_of=1,
+        ensure_multiple_of=14,
         resize_method="lower_bound",
     ):
         """Init.
@@ -172,20 +177,21 @@ class Resize(object):
     def __call__(self, x):
         width, height = self.get_size(*x.shape[-2:][::-1])
         return nn.functional.interpolate(x, (height, width), mode='bilinear', align_corners=True)
-class PrepForDepthAnything(nn.Module):
-    def __init__(self, keep_aspect_ratio=True, img_size=384, do_resize=True):
-        super().__init__()
-        # Define your preprocessing steps here
-        self.keep_aspect_ratio = keep_aspect_ratio
-        self.img_size = img_size
-        self.do_resize = do_resize
+    
 
-    def forward(self, x):
-        # Implement the preprocessing steps
-        pass
-
+class PrepForDepthAnything(object):
+    def __init__(self, resize_mode="minimal", keep_aspect_ratio=True, img_size=384, do_resize=True):
+        if isinstance(img_size, int):
+            img_size = (img_size, img_size)
+        net_h, net_w = img_size
+        self.normalization = Normalize(
+            mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        self.resizer = Resize(net_w, net_h, keep_aspect_ratio=keep_aspect_ratio, ensure_multiple_of=14, resize_method=resize_mode) \
+            if do_resize else nn.Identity()
+    def __call__(self, x):
+        return self.normalization(self.resizer(x))
 class DepthCore(nn.Module):
-    def __init__(self, depth_anything, trainable=False, fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=384, **kwargs):
+    def __init__(self, depth_anything, trainable=False,layer_names=('out_conv', 'l4_rn', 'r4', 'r3', 'r2', 'r1'), fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=378, **kwargs):
         """Depth Core model used for multi-scale feature extraction.
 
         Args:
@@ -204,7 +210,8 @@ class DepthCore(nn.Module):
         self.trainable = trainable
         self.fetch_features = fetch_features
         self.handles = []
-        
+        self.layer_names = layer_names
+
 
         self.set_trainable(trainable)
         self.set_fetch_features(fetch_features)
@@ -281,6 +288,37 @@ class DepthCore(nn.Module):
                 p.requires_grad = False
         return self
 
+    def attach_hooks(self, depth_anything):
+        if len(self.handles) > 0:
+            self.remove_hooks()
+        if "out_conv" in self.layer_names:
+            self.handles.append(list(depth_anything.scratch.output_conv.children())[
+                                3].register_forward_hook(get_activation("out_conv", self.core_out)))
+        if "r4" in self.layer_names:
+            self.handles.append(depth_anything.scratch.refinenet4.register_forward_hook(
+                get_activation("r4", self.core_out)))
+        if "r3" in self.layer_names:
+            self.handles.append(depth_anything.scratch.refinenet3.register_forward_hook(
+                get_activation("r3", self.core_out)))
+        if "r2" in self.layer_names:
+            self.handles.append(depth_anything.scratch.refinenet2.register_forward_hook(
+                get_activation("r2", self.core_out)))
+        if "r1" in self.layer_names:
+            self.handles.append(depth_anything.scratch.refinenet1.register_forward_hook(
+                get_activation("r1", self.core_out)))
+        if "l4_rn" in self.layer_names:
+            self.handles.append(depth_anything.scratch.layer4_rn.register_forward_hook(
+                get_activation("l4_rn", self.core_out)))
+
+        return self
+
+    def remove_hooks(self):
+        for h in self.handles:
+            h.remove()
+        return self
+
+    def __del__(self):
+        self.remove_hooks()
 
 
     def set_output_channels(self, model_type):
@@ -293,10 +331,16 @@ class DepthCore(nn.Module):
     
         if "img_size" in kwargs:
             kwargs = DepthCore.parse_img_size(kwargs)
-        img_size = kwargs.pop("img_size", [384, 384])
+        img_size = kwargs.pop("img_size", [378, 378])
         print("img_size", img_size)
-        
+        checkpoint_url = 'https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/checkpoints/depth_anything_vitb14.pth?download=true'
+        checkpoint = torch.hub.load_state_dict_from_url(checkpoint_url, map_location='cpu')
         depth_anything = DepthAnything.from_pretrained('LiheYoung/depth_anything_{:}14'.format(encoder))
+        if 'state_dict' in checkpoint:
+          depth_anything.load_state_dict(checkpoint['state_dict'], strict=False)
+        else:
+      # Nếu không có 'state_dict', áp dụng trọng số trực tiếp nếu cần
+          depth_anything.load_state_dict(checkpoint, strict=False)
         print(dir(depth_anything))
         print(depth_anything)
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
