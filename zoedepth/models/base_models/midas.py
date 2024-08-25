@@ -336,11 +336,8 @@ class DepthCore(nn.Module):
         checkpoint_url = 'https://huggingface.co/spaces/LiheYoung/Depth-Anything/resolve/main/checkpoints/depth_anything_vitb14.pth?download=true'
         checkpoint = torch.hub.load_state_dict_from_url(checkpoint_url, map_location='cpu')
         depth_anything = DepthAnything.from_pretrained('LiheYoung/depth_anything_{:}14'.format(encoder))
-        if 'state_dict' in checkpoint:
-          depth_anything.load_state_dict(checkpoint['state_dict'], strict=False)
-        else:
-      # Nếu không có 'state_dict', áp dụng trọng số trực tiếp nếu cần
-          depth_anything.load_state_dict(checkpoint, strict=False)
+        depth_anything.load_state_dict(torch.load(f'checkpoints/depth_anything_{args.encoder}.pth', map_location='cpu'))
+        depth_anything = depth_anything.to(DEVICE).eval()
         print(dir(depth_anything))
         print(depth_anything)
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
