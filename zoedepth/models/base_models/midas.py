@@ -153,7 +153,8 @@ class PrepForDepthAnything(object):
         return self.normalization(self.resizer(x))   
 
 class DepthCore(nn.Module):
-    def __init__(self, depth_anything, trainable=False, layer_names=('out_conv', 'reassemble_stage', 'feature_fusion), fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=378, **kwargs):
+    def __init__(self, depth_anything, trainable=True, layer_names=( 'reassemble_layer_0', 'reassemble_layer_1', 'reassemble_layer_2', 'reassemble_layer_3',
+    'fusion_layer_0', 'fusion_layer_1', 'fusion_layer_2', 'fusion_layer_3'), fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=378, **kwargs):
         super().__init__()
         self.core = depth_anything
         self.output_channels = None
@@ -170,8 +171,7 @@ class DepthCore(nn.Module):
 
         if freeze_bn:
             self.freeze_bn()
-        
-        self.check_parameters()
+       
 
     def set_trainable(self, trainable):
         self.trainable = trainable
@@ -219,10 +219,12 @@ class DepthCore(nn.Module):
 
             # print("Input size to Midascore", x.shape)
             rel_depth = self.core(x)
+            print(type(rel_depth))
             # print("Output from midas shape", rel_depth.shape)
             if not self.fetch_features:
                 return rel_depth
-        out = [self.core_out[k] for k in self.layer_names if k in self.core_out]
+        print(self.core_out.keys())        
+        out = [self.core_out[k] for k in self.layer_names]
 
         if return_rel_depth:
             return rel_depth, out
@@ -248,24 +250,31 @@ class DepthCore(nn.Module):
         return self
         
 
-
     def attach_hooks(self, depth_anything):
         if len(self.handles) > 0:
             self.remove_hooks()
 
         # Gắn hooks vào các lớp trong neck
         neck = depth_anything.neck
+
+        # Gắn hooks cho các lớp trong reassemble_stage
         if hasattr(neck, 'reassemble_stage'):
             reassemble_stage = neck.reassemble_stage
             for idx, layer in enumerate(reassemble_stage.layers):
                 self.handles.append(layer.register_forward_hook(get_activation(f"reassemble_layer_{idx}", self.core_out)))
+        else:
+            print("No 'reassemble_stage' found in neck.")
 
-        if hasattr(neck, 'feature_fusion'):
-            fusion_stage = neck.feature_fusion
+        # Gắn hooks cho các lớp trong fusion_stage
+        if hasattr(neck, 'fusion_stage'):
+            fusion_stage = neck.fusion_stage
             for idx, layer in enumerate(fusion_stage.layers):
                 self.handles.append(layer.register_forward_hook(get_activation(f"fusion_layer_{idx}", self.core_out)))
+        else:
+            print("No 'fusion_stage' found in neck.")
         
         return self
+ 
 
 
     def remove_hooks(self):
@@ -278,13 +287,6 @@ class DepthCore(nn.Module):
 
     def set_output_channels(self, model_type):
         self.output_channels = DEPTH_CORE_SETTINGS[model_type]
-
-    def check_parameters(self):
-        # Kiểm tra lỗi tham số
-        if not hasattr(self.core, 'neck') or not hasattr(self.core.neck, 'reassemble_stage'):
-            raise ValueError("The model does not contain the 'reassemble_stage' in its 'neck'.")
-        if not hasattr(self.core.neck, 'feature_fusion'):
-            raise ValueError("The model does not contain 'feature_fusion' in its 'neck'.")
     
     @staticmethod
     def build(encoder="vitl", fetch_features=False, freeze_bn=True, force_keep_ar=False, **kwargs):
