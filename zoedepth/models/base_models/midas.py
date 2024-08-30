@@ -331,4 +331,14 @@ nchannels2models = {
 
 DEPTH_CORE_SETTINGS = {m: k for k, v in nchannels2models.items() for m in v}   
 # Example usage
+depth_core = DepthCore.build(encoder="vitl")
 
+# Print the total number of parameters
+total_params = sum(p.numel() for p in depth_core.parameters())
+print(f"Total parameters: {total_params / 1e6:.2f}M")
+
+# Print the number of frozen and trainable parameters
+frozen_params = sum(p.numel() for p in depth_core.parameters() if not p.requires_grad)
+trainable_params = sum(p.numel() for p in depth_core.parameters() if p.requires_grad)
+print(f"Frozen parameters: {frozen_params / 1e6:.2f}M")
+print(f"Trainable parameters: {trainable_params / 1e6:.2f}M")
