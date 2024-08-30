@@ -153,7 +153,7 @@ class PrepForDepthAnything(object):
         return self.normalization(self.resizer(x))   
 
 class DepthCore(nn.Module):
-    def __init__(self, depth_anything, trainable=False, layer_names=('out_conv', 'l4_rn', 'r4', 'r3', 'r2', 'r1'), fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=378, **kwargs):
+    def __init__(self, depth_anything, trainable=False, layer_names=('out_conv', 'reassemble_stage', 'feature_fusion), fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=378, **kwargs):
         super().__init__()
         self.core = depth_anything
         self.output_channels = None
@@ -170,7 +170,9 @@ class DepthCore(nn.Module):
 
         if freeze_bn:
             self.freeze_bn()
-    
+        
+        self.check_parameters()
+
     def set_trainable(self, trainable):
         self.trainable = trainable
         if trainable:
@@ -220,7 +222,7 @@ class DepthCore(nn.Module):
             # print("Output from midas shape", rel_depth.shape)
             if not self.fetch_features:
                 return rel_depth
-        out = [self.core_out[k] for k in self.layer_names]
+        out = [self.core_out[k] for k in self.layer_names if k in self.core_out]
 
         if return_rel_depth:
             return rel_depth, out
@@ -250,22 +252,21 @@ class DepthCore(nn.Module):
     def attach_hooks(self, depth_anything):
         if len(self.handles) > 0:
             self.remove_hooks()
-        if hasattr(depth_anything, 'scratch'):
-            if "out_conv" in self.layer_names:
-                self.handles.append(list(depth_anything.scratch.output_conv.children())[3].register_forward_hook(get_activation("out_conv", self.core_out)))
-            if "r4" in self.layer_names:
-                self.handles.append(depth_anything.scratch.refinenet4.register_forward_hook(get_activation("r4", self.core_out)))
-            if "r3" in self.layer_names:
-                self.handles.append(depth_anything.scratch.refinenet3.register_forward_hook(get_activation("r3", self.core_out)))
-            if "r2" in self.layer_names:
-                self.handles.append(depth_anything.scratch.refinenet2.register_forward_hook(get_activation("r2", self.core_out)))
-            if "r1" in self.layer_names:
-                self.handles.append(depth_anything.scratch.refinenet1.register_forward_hook(get_activation("r1", self.core_out)))
-            if "l4_rn" in self.layer_names:
-                self.handles.append(depth_anything.scratch.layer4_rn.register_forward_hook(get_activation("l4_rn", self.core_out)))
-        else:
-            print("The model does not have the attribute 'scratch'. Please check the model structure.")
+
+        # Gắn hooks vào các lớp trong neck
+        neck = depth_anything.neck
+        if hasattr(neck, 'reassemble_stage'):
+            reassemble_stage = neck.reassemble_stage
+            for idx, layer in enumerate(reassemble_stage.layers):
+                self.handles.append(layer.register_forward_hook(get_activation(f"reassemble_layer_{idx}", self.core_out)))
+
+        if hasattr(neck, 'feature_fusion'):
+            fusion_stage = neck.feature_fusion
+            for idx, layer in enumerate(fusion_stage.layers):
+                self.handles.append(layer.register_forward_hook(get_activation(f"fusion_layer_{idx}", self.core_out)))
+        
         return self
+
 
     def remove_hooks(self):
         for h in self.handles:
@@ -278,6 +279,13 @@ class DepthCore(nn.Module):
     def set_output_channels(self, model_type):
         self.output_channels = DEPTH_CORE_SETTINGS[model_type]
 
+    def check_parameters(self):
+        # Kiểm tra lỗi tham số
+        if not hasattr(self.core, 'neck') or not hasattr(self.core.neck, 'reassemble_stage'):
+            raise ValueError("The model does not contain the 'reassemble_stage' in its 'neck'.")
+        if not hasattr(self.core.neck, 'feature_fusion'):
+            raise ValueError("The model does not contain 'feature_fusion' in its 'neck'.")
+    
     @staticmethod
     def build(encoder="vitl", fetch_features=False, freeze_bn=True, force_keep_ar=False, **kwargs):
         if encoder not in DEPTH_CORE_SETTINGS:
