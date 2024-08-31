@@ -100,12 +100,12 @@ DATASETS_CONFIG = {
         "max_depth": 10,
         "data_path": os.path.join(HOME_DIR, "./sync"),
         "gt_path": os.path.join(HOME_DIR, "./sync"),
-        "filenames_file": "/content/ZoeDepth/train_test_inputs/nyudepthv2_train_files_with_gt.txt",
+        "filenames_file": "/content/zoedepth-test/train_test_inputs/nyudepthv2_train_files_with_gt.txt",
         "input_height": 480,
         "input_width": 640,
         "data_path_eval": os.path.join(HOME_DIR, ""),
         "gt_path_eval": os.path.join(HOME_DIR, ""),
-        "filenames_file_eval": "/content/ZoeDepth/train_test_inputs/nyudepthv2_test_files_with_gt.txt",
+        "filenames_file_eval": "/content/zoedepth-test/train_test_inputs/nyudepthv2_test_files_with_gt.txt",
         "min_depth_eval": 1e-3,
         "max_depth_eval": 10,
         "min_depth_diff": -10,
@@ -251,7 +251,7 @@ COMMON_TRAINING_CONFIG = {
 
     "validate_every": 0.25,
     "log_images_every": 0.1,
-    "prefetch": True,
+    "prefetch": False,
 }
 
 
