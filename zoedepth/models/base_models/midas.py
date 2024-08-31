@@ -2,10 +2,19 @@ import torch
 import torch.nn as nn
 from torchvision.transforms import Normalize
 import numpy as np
-from transformers import AutoModelForDepthEstimation
-from transformers.models import depth_anything
+import sys
+sys.path.append('/content/zoedepth-test/zoedepth/models/base_models')
+from depth_anything.dpt import DepthAnything
 
 def denormalize(x):
+    """Reverses the imagenet normalization applied to the input.
+
+    Args:
+        x (torch.Tensor - shape(N,3,H,W)): input tensor
+
+    Returns:
+        torch.Tensor - shape(N,3,H,W): Denormalized input
+    """
     mean = torch.Tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(x.device)
     std = torch.Tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(x.device)
     return x * std + mean
@@ -16,7 +25,8 @@ def get_activation(name, bank):
     return hook
 
 class Resize(object):
-
+    """Resize sample to given size (width, height).
+    """
 
     def __init__(
         self,
@@ -24,7 +34,7 @@ class Resize(object):
         height,
         resize_target=True,
         keep_aspect_ratio=False,
-        ensure_multiple_of=14,
+        ensure_multiple_of=1,
         resize_method="lower_bound",
     ):
         """Init.
@@ -138,7 +148,7 @@ class Resize(object):
     def __call__(self, x):
         width, height = self.get_size(*x.shape[-2:][::-1])
         return nn.functional.interpolate(x, (height, width), mode='bilinear', align_corners=True)
-    
+
 
 class PrepForDepthAnything(object):
     def __init__(self, resize_mode="minimal", keep_aspect_ratio=True, img_size=384, do_resize=True):
@@ -147,14 +157,17 @@ class PrepForDepthAnything(object):
         net_h, net_w = img_size
         self.normalization = Normalize(
             mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        self.resizer = Resize(net_w, net_h, keep_aspect_ratio=keep_aspect_ratio, ensure_multiple_of=14, resize_method=resize_mode) \
+        self.resizer = Resize(net_w, net_h, keep_aspect_ratio=keep_aspect_ratio,
+        ensure_multiple_of=32, resize_method=resize_mode) \
             if do_resize else nn.Identity()
+
     def __call__(self, x):
-        return self.normalization(self.resizer(x))   
+        return self.normalization(self.resizer(x)) 
 
 class DepthCore(nn.Module):
-    def __init__(self, depth_anything, trainable=True, layer_names=( 'reassemble_layer_0', 'reassemble_layer_1', 'reassemble_layer_2', 'reassemble_layer_3',
-    'fusion_layer_0', 'fusion_layer_1', 'fusion_layer_2', 'fusion_layer_3'), fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=378, **kwargs):
+    def __init__(self, depth_anything, trainable=True, 
+    layer_names=( 'out_conv2', 'layer_1', 'layer_2', 'layer_3', 'layer_4','layer4_rn'),
+    fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=384, **kwargs):
         super().__init__()
         self.core = depth_anything
         self.output_channels = None
@@ -185,7 +198,7 @@ class DepthCore(nn.Module):
         self.fetch_features = fetch_features
         if fetch_features:
             if len(self.handles) == 0:
-                self.attach_hooks(self.core)
+                self.attach_hooks(self.core.depth_head)
         else:
             self.remove_hooks()
         return self
@@ -213,14 +226,14 @@ class DepthCore(nn.Module):
             if denorm:
                 x = denormalize(x)
             x = self.prep(x)
-            # print("Shape after prep: ", x.shape)
+            print("Shape after prep: ", x.shape)
 
         with torch.set_grad_enabled(self.trainable):
 
-            # print("Input size to Midascore", x.shape)
+            print("Input size to Midascore", x.shape)
             rel_depth = self.core(x)
             print(type(rel_depth))
-            # print("Output from midas shape", rel_depth.shape)
+            print("Output from midas shape", rel_depth.shape)
             if not self.fetch_features:
                 return rel_depth
         print(self.core_out.keys())        
@@ -250,31 +263,29 @@ class DepthCore(nn.Module):
         return self
         
 
-    def attach_hooks(self, depth_anything):
+    def attach_hooks(self, depth_head):
         if len(self.handles) > 0:
             self.remove_hooks()
+        if "out_conv2" in self.layer_names:
+            self.handles.append(list(depth_head.scratch.output_conv2.children())[
+                                3].register_forward_hook(get_activation("out_conv2", self.core_out)))
+        if "layer_4" in self.layer_names:
+            self.handles.append(depth_head.scratch.refinenet4.register_forward_hook(
+                get_activation("layer_4", self.core_out)))
+        if "layer_3" in self.layer_names:
+            self.handles.append(depth_head.scratch.refinenet3.register_forward_hook(
+                get_activation("layer_3", self.core_out)))
+        if "layer_2" in self.layer_names:
+            self.handles.append(depth_head.scratch.refinenet2.register_forward_hook(
+                get_activation("layer_2", self.core_out)))
+        if "layer_1" in self.layer_names:
+            self.handles.append(depth_head.scratch.refinenet1.register_forward_hook(
+                get_activation("layer_1", self.core_out)))
+        if "layer4_rn" in self.layer_names:
+            self.handles.append(depth_head.scratch.layer4_rn.register_forward_hook(
+                get_activation("layer4_rn", self.core_out)))
 
-        # Gắn hooks vào các lớp trong neck
-        neck = depth_anything.neck
-
-        # Gắn hooks cho các lớp trong reassemble_stage
-        if hasattr(neck, 'reassemble_stage'):
-            reassemble_stage = neck.reassemble_stage
-            for idx, layer in enumerate(reassemble_stage.layers):
-                self.handles.append(layer.register_forward_hook(get_activation(f"reassemble_layer_{idx}", self.core_out)))
-        else:
-            print("No 'reassemble_stage' found in neck.")
-
-        # Gắn hooks cho các lớp trong fusion_stage
-        if hasattr(neck, 'fusion_stage'):
-            fusion_stage = neck.fusion_stage
-            for idx, layer in enumerate(fusion_stage.layers):
-                self.handles.append(layer.register_forward_hook(get_activation(f"fusion_layer_{idx}", self.core_out)))
-        else:
-            print("No 'fusion_stage' found in neck.")
-        
         return self
- 
 
 
     def remove_hooks(self):
@@ -295,12 +306,11 @@ class DepthCore(nn.Module):
     
         if "img_size" in kwargs:
             kwargs = DepthCore.parse_img_size(kwargs)
-        img_size = kwargs.pop("img_size", [378, 378])
+        img_size = kwargs.pop("img_size", [384, 384])
         print("img_size", img_size)
-        depth_anything = AutoModelForDepthEstimation.from_pretrained("LiheYoung/depth-anything-large-hf")
-        print(dir(depth_anything))
+        depth_anything =  DepthAnything.from_pretrained('LiheYoung/depth_anything_{:}14'.format(encoder))
+
         print(depth_anything)
-        print(type(depth_anything))
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
         depth_core = DepthCore(depth_anything, fetch_features=fetch_features,
                                freeze_bn=freeze_bn, img_size=img_size, **kwargs)
@@ -316,14 +326,17 @@ class DepthCore(nn.Module):
     def parse_img_size(config):
         assert 'img_size' in config
         if isinstance(config['img_size'], str):
-           assert "," in config['img_size'], "img_size should be a string with comma separated img_size=H,W"
-           config['img_size'] = list(map(int, config['img_size'].split(",")))
-           assert len(config['img_size']) == 2, "img_size should be a string with comma separated img_size=H,W"
+            assert "," in config['img_size'], "img_size should be a string with comma separated img_size=H,W"
+            config['img_size'] = list(map(int, config['img_size'].split(",")))
+            assert len(
+                config['img_size']) == 2, "img_size should be a string with comma separated img_size=H,W"
         elif isinstance(config['img_size'], int):
-           config['img_size'] = [config['img_size'], config['img_size']]
+            config['img_size'] = [config['img_size'], config['img_size']]
         else:
-            assert isinstance(config['img_size'], list) and len(config['img_size']) == 2, "img_size should be a list of H,W"
+            assert isinstance(config['img_size'], list) and len(
+                config['img_size']) == 2, "img_size should be a list of H,W"
         return config
+
  
 
 # Model name to number of output channels
@@ -333,14 +346,3 @@ nchannels2models = {
 
 DEPTH_CORE_SETTINGS = {m: k for k, v in nchannels2models.items() for m in v}   
 # Example usage
-depth_core = DepthCore.build(encoder="vitl")
-
-# Print the total number of parameters
-total_params = sum(p.numel() for p in depth_core.parameters())
-print(f"Total parameters: {total_params / 1e6:.2f}M")
-
-# Print the number of frozen and trainable parameters
-frozen_params = sum(p.numel() for p in depth_core.parameters() if not p.requires_grad)
-trainable_params = sum(p.numel() for p in depth_core.parameters() if p.requires_grad)
-print(f"Frozen parameters: {frozen_params / 1e6:.2f}M")
-print(f"Trainable parameters: {trainable_params / 1e6:.2f}M")
