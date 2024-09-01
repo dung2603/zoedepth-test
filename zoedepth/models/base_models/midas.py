@@ -158,7 +158,7 @@ class PrepForDepthAnything(object):
         self.normalization = Normalize(
             mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         self.resizer = Resize(net_w, net_h, keep_aspect_ratio=keep_aspect_ratio,
-        ensure_multiple_of=32, resize_method=resize_mode) \
+        ensure_multiple_of=14, resize_method=resize_mode) \
             if do_resize else nn.Identity()
 
     def __call__(self, x):
@@ -166,7 +166,7 @@ class PrepForDepthAnything(object):
 
 class DepthCore(nn.Module):
     def __init__(self, depth_anything, trainable=True, 
-    layer_names=( 'out_conv2', 'layer_1', 'layer_2', 'layer_3', 'layer_4','layer4_rn'),
+    layer_names=( 'out_conv2','layer_1', 'layer_2', 'layer_3', 'layer_4','layer4_rn'),
     fetch_features=True, freeze_bn=False, keep_aspect_ratio=True, img_size=384, **kwargs):
         super().__init__()
         self.core = depth_anything
@@ -268,7 +268,7 @@ class DepthCore(nn.Module):
             self.remove_hooks()
         if "out_conv2" in self.layer_names:
             self.handles.append(list(depth_head.scratch.output_conv2.children())[
-                                3].register_forward_hook(get_activation("out_conv2", self.core_out)))
+                                1].register_forward_hook(get_activation("out_conv2", self.core_out)))
         if "layer_4" in self.layer_names:
             self.handles.append(depth_head.scratch.refinenet4.register_forward_hook(
                 get_activation("layer_4", self.core_out)))
