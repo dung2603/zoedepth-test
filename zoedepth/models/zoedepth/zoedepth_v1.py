@@ -81,8 +81,9 @@ class ZoeDepth(DepthModel):
 
         N_MIDAS_OUT = 32
         btlnck_features = self.core.output_channels[0]
+        print("btlnck_features= ", btlnck_features)
         num_out_features = self.core.output_channels[1:]
-
+        print("num_out_features= ", num_out_features)
         self.conv2 = nn.Conv2d(btlnck_features, btlnck_features,
                                kernel_size=1, stride=1, padding=0)  # btlnck conv
 
@@ -149,6 +150,7 @@ class ZoeDepth(DepthModel):
         x_blocks = out[2:]
 
         x_d0 = self.conv2(btlnck)
+        print("x_d0= ", x_d0)
         x = x_d0
         _, seed_b_centers = self.seed_bin_regressor(x)
 
