@@ -107,6 +107,8 @@ class ConditionalLogBinomial(nn.Module):
         Returns:
             torch.Tensor: Output log binomial distribution
         """
+        print(f"x shape: {x.shape}")  # Kiểm tra kích thước của x
+        print(f"cond shape: {cond.shape}")  # Kiểm tra kích thước của cond
         pt = self.mlp(torch.concat((x, cond), dim=1))
         p, t = pt[:, :2, ...], pt[:, 2:, ...]
 
