@@ -226,17 +226,17 @@ class DepthCore(nn.Module):
             if denorm:
                 x = denormalize(x)
             x = self.prep(x)
-            print("Shape after prep: ", x.shape)
+            #print("Shape after prep: ", x.shape)
 
         with torch.set_grad_enabled(self.trainable):
 
-            print("Input size to Midascore", x.shape)
+            #print("Input size to Midascore", x.shape)
             rel_depth = self.core(x)
-            print(type(rel_depth))
-            print("Output from midas shape", rel_depth.shape)
+            #print(type(rel_depth))
+            #print("Output from midas shape", rel_depth.shape)
             if not self.fetch_features:
                 return rel_depth
-        print(self.core_out.keys())        
+        #print(self.core_out.keys())        
         out = [self.core_out[k] for k in self.layer_names]
 
         if return_rel_depth:
@@ -307,10 +307,10 @@ class DepthCore(nn.Module):
         if "img_size" in kwargs:
             kwargs = DepthCore.parse_img_size(kwargs)
         img_size = kwargs.pop("img_size", [384, 384])
-        print("img_size", img_size)
+        #print("img_size", img_size)
         depth_anything =  DepthAnything.from_pretrained('LiheYoung/depth_anything_{:}14'.format(encoder))
 
-        print(depth_anything)
+        #print(depth_anything)
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
         depth_core = DepthCore(depth_anything, fetch_features=fetch_features,
                                freeze_bn=freeze_bn, img_size=img_size, **kwargs)
