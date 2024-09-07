@@ -155,14 +155,15 @@ class PrepForDepthAnything(object):
         if isinstance(img_size, int):
             img_size = (img_size, img_size)
         net_h, net_w = img_size
+        # self.normalization = Normalize(
+        #     mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         self.normalization = Normalize(
-            mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        self.resizer = Resize(net_w, net_h, keep_aspect_ratio=keep_aspect_ratio,
-        ensure_multiple_of=14, resize_method=resize_mode) \
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        self.resizer = Resize(net_w, net_h, keep_aspect_ratio=keep_aspect_ratio, ensure_multiple_of=14, resize_method=resize_mode) \
             if do_resize else nn.Identity()
 
     def __call__(self, x):
-        return self.normalization(self.resizer(x)) 
+        return self.normalization(self.resizer(x)
 
 class DepthCore(nn.Module):
     def __init__(self, depth_anything, trainable=True, 
@@ -298,7 +299,7 @@ class DepthCore(nn.Module):
         self.remove_hooks()
 
     def set_output_channels(self, model_type):
-        self.output_channels = DEPTH_CORE_SETTINGS[model_type]
+        self.output_channels = [256, 256, 256, 256, 256]
     
     @staticmethod
     def build(encoder="vitl",train_depthanything=True, use_pretrained_depth=True, fetch_features=False, freeze_bn=True, force_keep_ar=False,force_reload=False, **kwargs):
