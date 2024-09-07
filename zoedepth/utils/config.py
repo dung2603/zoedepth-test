@@ -43,7 +43,7 @@ COMMON_CONFIG = {
     "gpu": None,
     "root": ".",
     "uid": None,
-    "print_losses": False
+    "print_losses": True
 }
 
 DATASETS_CONFIG = {
