@@ -21,11 +21,11 @@
     },
     
     "train": {
-        "train_midas": true,
-        "use_pretrained_midas": true,
+        "train_depthanything": true,
+        "use_pretrained_depth": true,
         "trainer": "zoedepth",
         "epochs": 1,
-        "bs": 4,
+        "bs": 1,
         "optim_kwargs": {"lr": 0.000161, "wd": 0.01},
         "sched_kwargs": {"div_factor": 1, "final_div_factor": 10000, "pct_start": 0.7, "three_phase":true, "cycle_momentum": true},
         "same_lr": false,
@@ -45,15 +45,15 @@
     },
 
     "infer":{
-        "train_midas": false,
-        "use_pretrained_midas": false,
+        "train_depthanything": false,
+        "use_pretrained_depth": false,
         "pretrained_resource" : "url::https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vitl14.pth",
         "force_keep_ar": true
     },
 
     "eval":{
-        "train_midas": false,
-        "use_pretrained_midas": false,
+        "train_depthanything": false,
+        "use_pretrained_depth": false,
         "pretrained_resource" : "url::https://huggingface.co/spaces/LiheYoung/Depth-Anything/blob/main/checkpoints/depth_anything_vitl14.pth"
     }
 }
