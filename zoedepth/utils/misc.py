@@ -219,13 +219,11 @@ def compute_metrics(gt, pred, interpolate=True, garg_crop=False, eigen_crop=True
     pred[pred > max_depth_eval] = max_depth_eval
     pred[np.isinf(pred)] = max_depth_eval
     pred[np.isnan(pred)] = min_depth_eval
-    print("Shapes:", gt.shape, pred.shape)
     gt_depth = gt.squeeze().cpu().numpy()
     valid_mask = np.logical_and(
         gt_depth > min_depth_eval, gt_depth < max_depth_eval)
 
     if garg_crop or eigen_crop:
-        print("Shape of gt_depth:", gt_depth.shape)
         gt_height, gt_width = gt_depth.shape
         eval_mask = np.zeros(valid_mask.shape)
         
@@ -244,7 +242,6 @@ def compute_metrics(gt, pred, interpolate=True, garg_crop=False, eigen_crop=True
         else:
             eval_mask = np.ones(valid_mask.shape)
     valid_mask = np.logical_and(valid_mask, eval_mask)
-    print("shape of valid mask:", valid_mask.shape)
     return compute_errors(gt_depth[valid_mask], pred[valid_mask])
 
 
