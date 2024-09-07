@@ -37,8 +37,8 @@ from zoedepth.models.model_io import load_state_from_resource
 
 class ZoeDepth(DepthModel):
     def __init__(self, core,  n_bins=64, bin_centers_type="softplus", bin_embedding_dim=128, min_depth=1e-3, max_depth=10,
-                 n_attractors=[16, 8, 4, 1], attractor_alpha=300, attractor_gamma=2, attractor_kind='sum', attractor_type='exp', min_temp=5, max_temp=50, train_midas=True,
-                 midas_lr_factor=10, encoder_lr_factor=10, pos_enc_lr_factor=10, inverse_midas=False, **kwargs):
+                 n_attractors=[16, 8, 4, 1], attractor_alpha=300, attractor_gamma=2, attractor_kind='sum', attractor_type='exp', min_temp=5, max_temp=50, train_depthanything=True,
+                 midas_lr_factor=10, encoder_lr_factor=10, pos_enc_lr_factor=10, inverse_depthanything=False, **kwargs):
         """ZoeDepth model. This is the version of ZoeDepth that has a single metric head
 
         Args:
@@ -72,8 +72,8 @@ class ZoeDepth(DepthModel):
         self.midas_lr_factor = midas_lr_factor
         self.encoder_lr_factor = encoder_lr_factor
         self.pos_enc_lr_factor = pos_enc_lr_factor
-        self.train_midas = train_midas
-        self.inverse_midas = inverse_midas
+        self.train_depthanything = train_depthanything
+        self.inverse_depthanything = inverse_depthanything
 
         if self.encoder_lr_factor <= 0:
             self.core.freeze_encoder(
@@ -169,7 +169,7 @@ class ZoeDepth(DepthModel):
 
         last = outconv_activation
 
-        if self.inverse_midas:
+        if self.inverse_depthanything:
             # invert depth followed by normalization
             rel_depth = 1.0 / (rel_depth + 1e-6)
             rel_depth = (rel_depth - rel_depth.min()) / \
@@ -210,7 +210,7 @@ class ZoeDepth(DepthModel):
         """
         param_conf = []
         
-        if self.train_midas:
+        if self.train_depthanything:
             if self.encoder_lr_factor > 0:
                 param_conf.append({'params': self.core.get_enc_params_except_rel_pos(
                 ), 'lr': lr / self.encoder_lr_factor})
@@ -219,12 +219,12 @@ class ZoeDepth(DepthModel):
                 param_conf.append(
                     {'params': self.core.get_rel_pos_params(), 'lr': lr / self.pos_enc_lr_factor})
             
-            midas_params = self.core.core.depth_head.scratch.parameters()
-            print("midas param=", midas_params)
+            depthanything_params = self.core.core.depth_head.scratch.parameters()
+            #print("depthanything param=", depthanything_params)
             midas_lr_factor = self.midas_lr_factor
             param_conf.append(
-                {'params': midas_params, 'lr': lr / midas_lr_factor})
-            print("midas factor=", midas_lr_factor)
+                {'params': depthanything_params, 'lr': lr / midas_lr_factor})
+            #print("midas factor=", midas_lr_factor)
         remaining_modules = []
         for name, child in self.named_children():
             if name != 'core':
@@ -238,7 +238,7 @@ class ZoeDepth(DepthModel):
         return param_conf
 
     @staticmethod
-    def build(encoder="vitl", pretrained_resource=None, freeze_midas_bn=True, **kwargs):
+    def build(encoder="vitl", pretrained_resource=None, use_pretrained_depth=False, train_depthanything=False, freeze_midas_bn=True, **kwargs):
         core = DepthCore.build(encoder=encoder, fetch_features=True, freeze_bn=freeze_midas_bn, **kwargs)
         model = ZoeDepth(core, **kwargs)
         if pretrained_resource:
