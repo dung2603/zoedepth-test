@@ -81,9 +81,7 @@ class ZoeDepth(DepthModel):
 
         N_MIDAS_OUT = 32
         btlnck_features = self.core.output_channels[0]
-        print("btlnck_features= ", btlnck_features)
         num_out_features = self.core.output_channels[1:]
-        print("num_out_features= ", num_out_features)
         self.conv2 = nn.Conv2d(btlnck_features, btlnck_features,
                                kernel_size=1, stride=1, padding=0)  # btlnck conv
 
@@ -150,7 +148,6 @@ class ZoeDepth(DepthModel):
         x_blocks = out[2:]
 
         x_d0 = self.conv2(btlnck)
-        print("x_d0= ", x_d0)
         x = x_d0
         _, seed_b_centers = self.seed_bin_regressor(x)
 
@@ -221,15 +218,13 @@ class ZoeDepth(DepthModel):
             if self.pos_enc_lr_factor > 0:
                 param_conf.append(
                     {'params': self.core.get_rel_pos_params(), 'lr': lr / self.pos_enc_lr_factor})
-            if hasattr(self.core, 'depth_head'):
-              midas_params = self.core.depth_head.parameters()
-            else:
-              midas_params = [] 
-          
+            
+            midas_params = self.core.core.depth_head.scratch.parameters()
+            print("midas param=", midas_params)
             midas_lr_factor = self.midas_lr_factor
             param_conf.append(
                 {'params': midas_params, 'lr': lr / midas_lr_factor})
-
+            print("midas factor=", midas_lr_factor)
         remaining_modules = []
         for name, child in self.named_children():
             if name != 'core':
@@ -243,9 +238,8 @@ class ZoeDepth(DepthModel):
         return param_conf
 
     @staticmethod
-    def build(encoder="vitl", pretrained_resource=None, use_pretrained_midas=False, train_midas=False, freeze_midas_bn=True, **kwargs):
-        core = DepthCore.build(encoder=encoder, use_pretrained_midas=use_pretrained_midas,
-                               train_midas=train_midas, fetch_features=True, freeze_bn=freeze_midas_bn, **kwargs)
+    def build(encoder="vitl", pretrained_resource=None, freeze_midas_bn=True, **kwargs):
+        core = DepthCore.build(encoder=encoder, fetch_features=True, freeze_bn=freeze_midas_bn, **kwargs)
         model = ZoeDepth(core, **kwargs)
         if pretrained_resource:
             assert isinstance(pretrained_resource, str), "pretrained_resource must be a string"
