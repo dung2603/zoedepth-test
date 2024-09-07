@@ -243,7 +243,7 @@ COMMON_TRAINING_CONFIG = {
     "use_amp": False,
 
     "aug": True,
-    "random_crop": True,
+    "random_crop": False,
     "random_translate": False,
     "translate_prob": 0.2,
     "max_translation": 100,
