@@ -163,7 +163,7 @@ class PrepForDepthAnything(object):
             if do_resize else nn.Identity()
 
     def __call__(self, x):
-        return self.normalization(self.resizer(x)
+        return self.normalization(self.resizer(x))
 
 class DepthCore(nn.Module):
     def __init__(self, depth_anything, trainable=True, 
