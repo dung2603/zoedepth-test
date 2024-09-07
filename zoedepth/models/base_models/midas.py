@@ -185,6 +185,7 @@ class DepthCore(nn.Module):
         if freeze_bn:
             self.freeze_bn()
        
+        print(dir(self.core))
 
     def set_trainable(self, trainable):
         self.trainable = trainable
@@ -244,18 +245,18 @@ class DepthCore(nn.Module):
         return out
 
     def get_rel_pos_params(self):
-        for name, p in self.core.named_parameters():
+        for name, p in self.core.pretrained.named_parameters():
             if "relative_position" in name:
                 yield p
 
     def get_enc_params_except_rel_pos(self):
-        for name, p in self.core.named_parameters():
+        for name, p in self.core.pretrained.named_parameters():
             if "relative_position" not in name:
                 yield p
 
     def freeze_encoder(self, freeze_rel_pos=False):
         if freeze_rel_pos:
-            for p in self.core.parameters():
+            for p in self.core.pretrained.parameters():
                 p.requires_grad = False
         else:
             for p in self.get_enc_params_except_rel_pos():
