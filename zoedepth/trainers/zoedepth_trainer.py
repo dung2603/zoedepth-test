@@ -43,7 +43,7 @@ class Trainer(BaseTrainer):
         self.device = device
         self.silog_loss = SILogLoss()
         self.grad_loss = GradL1Loss()
-        self.scaler = amp.GradScaler(enabled=self.config.use_amp)
+        self.scaler = torch.amp.GradScaler(enabled=self.config.use_amp)
 
     def train_on_batch(self, batch, train_step):
         """
