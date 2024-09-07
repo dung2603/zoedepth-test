@@ -156,7 +156,7 @@ if __name__ == '__main__':
         port = np.random.randint(15000, 15025)
         config.dist_url = 'tcp://{}:{}'.format(nodes[0], port)
         print(config.dist_url)
-        config.dist_backend = 'gloo'
+        config.dist_backend = 'nccl'
         config.gpu = None
 
     ngpus_per_node = torch.cuda.device_count()
