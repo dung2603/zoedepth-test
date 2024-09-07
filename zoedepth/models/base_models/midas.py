@@ -301,7 +301,7 @@ class DepthCore(nn.Module):
         self.output_channels = DEPTH_CORE_SETTINGS[model_type]
     
     @staticmethod
-    def build(encoder="vitl", fetch_features=False, freeze_bn=True, force_keep_ar=False, **kwargs):
+    def build(encoder="vitl",train_depthanything=True, use_pretrained_depth=True, fetch_features=False, freeze_bn=True, force_keep_ar=False,force_reload=False, **kwargs):
         if encoder not in DEPTH_CORE_SETTINGS:
             raise ValueError(f"Invalid model type: {encoder}. Must be one of {list(DEPTH_CORE_SETTINGS.keys())}")
     
@@ -313,7 +313,7 @@ class DepthCore(nn.Module):
 
         #print(depth_anything)
         kwargs.update({'keep_aspect_ratio': force_keep_ar})
-        depth_core = DepthCore(depth_anything, fetch_features=fetch_features,
+        depth_core = DepthCore(depth_anything,trainable=train_depthanything, fetch_features=fetch_features,
                                freeze_bn=freeze_bn, img_size=img_size, **kwargs)
         depth_core.set_output_channels(encoder)
         return depth_core
