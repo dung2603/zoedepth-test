@@ -35,7 +35,7 @@ import torch
 import torch.nn as nn
 import torch.utils.data.distributed
 from zoedepth.utils.easydict import EasyDict as edict
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
@@ -52,6 +52,7 @@ from .vkitti import get_vkitti_loader
 from .vkitti2 import get_vkitti2_loader
 
 from .preprocess import CropParams, get_white_border, get_black_border
+
 
 
 def _is_pil_image(img):
@@ -286,7 +287,8 @@ class DataLoadPreprocess(Dataset):
             self.reader = CachedReader(config.shared_dict)
         else:
             self.reader = ImReader()
-
+        self.color_jitter = transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.2)
+        self.gaussian_blur = transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5))
     def postprocess(self, sample):
         return sample
 
@@ -487,6 +489,8 @@ class DataLoadPreprocess(Dataset):
         return image, depth_gt
 
     def augment_image(self, image):
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray((image * 255).astype(np.uint8))
         # gamma augmentation
         gamma = random.uniform(0.9, 1.1)
         image_aug = image ** gamma
@@ -497,7 +501,13 @@ class DataLoadPreprocess(Dataset):
         else:
             brightness = random.uniform(0.9, 1.1)
         image_aug = image_aug * brightness
-
+        # Apply color jittering
+        image_aug = self.color_jitter(image)
+         # Apply gaussian blur
+        if random.random() > 0.5:
+            image_aug = image_aug.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.1, 2.0)))
+        # Convert the image back to numpy array
+        image_aug = np.asarray(image_aug) / 255.0    
         # color augmentation
         colors = np.random.uniform(0.9, 1.1, size=3)
         white = np.ones((image.shape[0], image.shape[1]))
