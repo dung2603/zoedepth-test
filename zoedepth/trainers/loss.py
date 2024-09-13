@@ -133,52 +133,6 @@ class GradL1Loss(nn.Module):
             return loss
         return loss, intr_input
 
-class AffineInvariantLoss(nn.Module):
-    def __init__(self):
-        super(AffineInvariantLoss, self).__init__()
-        self.name = 'AffineInvariantLoss'
-
-    def forward(self, prediction, target, mask=None, interpolate=True, return_interpolated=False):
-        # Nếu input cần được nội suy kích thước, thực hiện nội suy
-        if prediction.shape[-1] != target.shape[-1] and interpolate:
-            prediction = nn.functional.interpolate(prediction, target.shape[-2:], mode='bilinear', align_corners=True)
-        
-        # Tính toán gradient của cả prediction và target
-        grad_pred, _ = grad(prediction)
-        grad_target, _ = grad(target)
-
-        if mask is not None:
-            mask_g = grad_mask(mask)
-            loss = nn.functional.l1_loss(grad_pred[mask_g], grad_target[mask_g])
-        else:
-            loss = nn.functional.l1_loss(grad_pred, grad_target)
-
-        if not return_interpolated:
-            return loss
-        return loss, prediction
-
-class AlignmentLoss(nn.Module):
-    def __init__(self):
-        super(AlignmentLoss, self).__init__()
-        self.name = 'AlignmentLoss'
-
-    def forward(self, prediction, target, mask=None, interpolate=True, return_interpolated=False):
-        # Nếu input cần được nội suy kích thước, thực hiện nội suy
-        if prediction.shape[-1] != target.shape[-1] and interpolate:
-            prediction = nn.functional.interpolate(prediction, target.shape[-2:], mode='bilinear', align_corners=True)
-        
-        # Tính toán sự khác biệt về hình dạng giữa prediction và target
-        diff = torch.abs(prediction - target)
-
-        if mask is not None:
-            loss = torch.mean(diff[mask])
-        else:
-            loss = torch.mean(diff)
-
-        if not return_interpolated:
-            return loss
-        return loss, prediction
-
 class OrdinalRegressionLoss(object):
 
     def __init__(self, ord_num, beta, discretization="SID"):
