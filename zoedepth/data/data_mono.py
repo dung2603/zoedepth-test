@@ -34,7 +34,7 @@ import torch
 import torch.nn as nn
 import torch.utils.data.distributed
 from zoedepth.utils.easydict import EasyDict as edict
-from PIL import Image, ImageOps,ImageFilter, ImageEnhance
+from PIL import Image, ImageOps
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
@@ -469,42 +469,6 @@ class DataLoadPreprocess(Dataset):
         depth = depth.squeeze()[..., None]  # add channel dim back. Affine warp removes it
         # print("after", img.shape, depth.shape)
         return img, depth
-  
-
-    def gaussianblur(self, image):
-        if self.config.GaussianBlue:
-        # Áp dụng GaussianBlur trực tiếp lên numpy array
-           ksize = random.randint(3, 7)  # Kích thước kernel ngẫu nhiên trong khoảng 3-7
-           if ksize % 2 == 0:  # Kernel size phải là số lẻ
-              ksize += 1
-           sigma = random.uniform(0.1, 2.0)  # Độ lệch chuẩn ngẫu nhiên
-           image = cv2.GaussianBlur(image, (ksize, ksize), sigma)
-        return image
-
-    def colorjitter(self, image):
-        if self.config.Colorjitter:
-        # Áp dụng jitter bằng cách biến đổi từng kênh màu
-           brightness_factor = random.uniform(0.8, 1.2)
-           contrast_factor = random.uniform(0.8, 1.2)
-           saturation_factor = random.uniform(0.8, 1.2)
-
-        # Áp dụng brightness (độ sáng)
-           image = image * brightness_factor
-           image = np.clip(image, 0, 1)
-
-        # Áp dụng contrast (độ tương phản)
-           mean = np.mean(image, axis=(0, 1), keepdims=True)
-           image = (image - mean) * contrast_factor + mean
-           image = np.clip(image, 0, 1)
-
-        # Áp dụng saturation (độ bão hòa)
-           hsv_image = cv2.cvtColor((image * 255).astype('uint8'), cv2.COLOR_RGB2HSV).astype(np.float32)
-           hsv_image[:, :, 1] *= saturation_factor
-           hsv_image = np.clip(hsv_image, 0, 255)
-           image = cv2.cvtColor(hsv_image.astype('uint8'), cv2.COLOR_HSV2RGB) / 255.0
-
-        return image
-
 
     def train_preprocess(self, image, depth_gt):
         if self.config.aug:
@@ -539,8 +503,7 @@ class DataLoadPreprocess(Dataset):
         color_image = np.stack([white * colors[i] for i in range(3)], axis=2)
         image_aug *= color_image
         image_aug = np.clip(image_aug, 0, 1)
-        image_aug = self.gaussianblur(image_aug)
-        image_aug = self.colorjitter(image_aug)
+
         return image_aug
 
     def __len__(self):
