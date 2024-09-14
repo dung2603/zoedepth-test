@@ -247,8 +247,6 @@ COMMON_TRAINING_CONFIG = {
     "random_translate": False,
     "translate_prob": 0.2,
     "max_translation": 100,
-    "colorjitter":True,
-    "gaussianblur": True,
 
     "validate_every": 0.25,
     "log_images_every": 0.1,
