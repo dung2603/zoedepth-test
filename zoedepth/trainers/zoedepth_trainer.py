@@ -42,7 +42,7 @@ class Trainer(BaseTrainer):
                          test_loader=test_loader, device=device)
         self.device = device
         # Mô hình MidasNet nhỏ như một lớp refinement
-        self.model_midas = MidasNet_small_videpth(path=None)
+        self.model_midas = MidasNet_small_videpth(path=None).to(device)
         self.silog_loss = SILogLoss()
         self.grad_loss = GradL1Loss()
         self.scaler = torch.amp.GradScaler(enabled=self.config.use_amp)
