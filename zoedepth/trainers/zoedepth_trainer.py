@@ -25,7 +25,7 @@
 import torch
 import torch.cuda.amp as amp
 import torch.nn as nn
-
+from zoedepth.trainers.model.modules.midas.midas_net_custom import MidasNet_small_videpth
 from zoedepth.trainers.loss import GradL1Loss, SILogLoss
 from zoedepth.utils.config import DATASETS_CONFIG
 from zoedepth.utils.misc import compute_metrics
@@ -41,6 +41,8 @@ class Trainer(BaseTrainer):
         super().__init__(config, model, train_loader,
                          test_loader=test_loader, device=device)
         self.device = device
+        # Mô hình MidasNet nhỏ như một lớp refinement
+        self.model_midas = MidasNet_small_videpth(path=None)
         self.silog_loss = SILogLoss()
         self.grad_loss = GradL1Loss()
         self.scaler = torch.amp.GradScaler(enabled=self.config.use_amp)
@@ -65,9 +67,12 @@ class Trainer(BaseTrainer):
 
             output = self.model(images)
             pred_depths = output['metric_depth']
-
+            # **Bước 2: Sử dụng MidasNet_small để tinh chỉnh**
+            d = torch.ones_like(pred_depths)
+            pred_depths_refined, scales = self.model_midas(images, pred_depths)
+            
             l_si, pred = self.silog_loss(
-                pred_depths, depths_gt, mask=mask, interpolate=True, return_interpolated=True)
+                pred_depths_refined, depths_gt, mask=mask, interpolate=True, return_interpolated=True)
             loss = self.config.w_si * l_si
             losses[self.silog_loss.name] = l_si
 
@@ -108,7 +113,10 @@ class Trainer(BaseTrainer):
         with amp.autocast(enabled=self.config.use_amp):
             m = self.model.module if self.config.multigpu else self.model
             pred_depths = m(x)['metric_depth']
-        return pred_depths
+            # Bước 2: Tinh chỉnh với MidasNet_small
+            d = torch.ones_like(pred_depths)
+            pred_depths_refined, _ = self.model_midas(x, pred_depths)
+        return pred_depths_refined
 
     @torch.no_grad()
     def crop_aware_infer(self, x):
